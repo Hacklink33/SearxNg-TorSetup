@@ -1,0 +1,293 @@
+#!/usr/bin/env bash
+
+default_path="/usr/local/"
+IP=$(curl -4 -s https://api.ipify.org || curl -4 -s https://icanhazip.com) && [[ "$public_ip" =~ ^[0-9.]+$ ]] && echo "$public_ip" || error "Error" > /dev/null 2>&1
+Priv_IP=$(hostname -I | awk '{print $1}') && [[ "$private_ip" =~ ^[0-9.]+$ ]] && echo "$private_ip" || error "Error" > /dev/null 2>&1
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # no color
+
+# Helper Functions
+important() { echo -e "\n\n${CYAN}[WEB SERVER]"; }
+reset() { echo -e "${NC}"; }
+info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+banner() { echo -e "${CYAN}"; }
+success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+banner
+cat << "EOF"
+  $$$$$\                                         $$\   $$\  $$$$$$\    
+$$  __$$\                                        $$$\  $$ |$$  __$$\   
+$$ /  \__| $$$$$$\   $$$$$$\   $$$$$$\ $$\   $$\ $$$$\ $$ |$$ /  \__|  
+\$$$$$$\  $$  __$$\  \____$$\ $$  __$$\\$$\ $$  |$$ $$\$$ |$$ |$$$$\   
+ \____$$\ $$$$$$$$ | $$$$$$$ |$$ |  \__|\$$$$  / $$ \$$$$ |$$ |\_$$ |  
+$$\   $$ |$$   ____|$$  __$$ |$$ |      $$  $$<  $$ |\$$$ |$$ |  $$ |  
+\$$$$$$  |\$$$$$$$\ \$$$$$$$ |$$ |     $$  /\$$\ $$ | \$$ |\$$$$$$  |  
+ \______/  \_______| \_______|\__|     \__/  \__|\__|  \__| \______/ 
+
+   +@@@@                                       ....              
+    +@@@@@@@@@                                .::                
+          +@@@@@@@@@                         .:.                 
+                +@@@@@@@@@                   -.*                 
+                      +@@@@@@@@#           @  .-:#:              
+                         @@@@@@@-       +=  -...+==#*            
+                   :@@@@@@@@           =......-.-#**#-           
+              -@@@@@@@@                @ -.-..-==@%%%@           
+         -@@@@@@@@                     +.:+.:-+:%@@@@#           
+    +@@@@@@@@                           +-+-::++@@@@#            
+   +@@@%                                   #@@@@@@.              
+  
+EOF
+
+help_menu(){
+        echo -e "\n${CYAN}SearXNG Installer Script Help${NC}"
+    echo
+    echo -e "${BLUE}Description:${NC}"
+    echo "  This script installs and configures SearXNG, a privacy-respecting metasearch engine,"
+    echo "  using Docker and Docker Compose. It also configures Tor integration and applies"
+    echo "  sensible defaults including public IP detection and a predefined folder structure."
+    echo
+    echo -e "${BLUE}Usage:${NC}"
+    echo "  ./$(basename "$0") [OPTIONS]"
+    echo
+    echo -e "${BLUE}Options:${NC}"
+    echo "  -h, --help          Show this help menu and exit."
+    echo "  --reset             Reset the existing SearXNG setup (if any)."
+    echo "  --no-tor            Skip configuring Tor support."
+    echo "  --add-browser       Add custom search engine integration (e.g., Amhia)."
+    echo
+    echo -e "${BLUE}Examples:${NC}"
+    echo "  sudo ./$(basename "$0")               # Install SearXNG with full setup"
+    echo "  sudo ./$(basename "$0") --reset       # Reset SearXNG to default state"
+    echo "  sudo ./$(basename "$0") --no-tor      # Install without configuring Tor"
+    echo "  sudo ./$(basename "$0") --add-browser # Install and add Amhia engine"
+    echo
+    echo -e "${BLUE}Default Configuration:${NC}"
+    echo "  - Installation Path : ${default_path}searxng-docker"
+    echo "  - Access URL        : http://<Your-Public-IP>:8181"
+    echo "  - Docker Port       : 8181"
+    echo "  - Uses Public IP    : ${IP}"
+    echo "  - Uses Private IP   : ${Priv_IP}"
+    echo
+    echo -e "${BLUE}Notes:${NC}"
+    echo "  - It's recommended to run this script as root or using sudo."
+    echo "  - Make sure Docker and Docker Compose are installed."
+    echo "  - Tor must be reachable for proxy support if enabled."
+    echo
+    exit 0
+}
+
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        warning "This script should be run as root or with sudo."
+        read -p "Do you want to continue? (y/n) " answer
+        if [[ ! $answer =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+}
+
+update_system() {
+    info "Updating system..."
+    apt update -y > /dev/null 2>&1
+    # apt upgrade -y > /dev/null 2>&1
+    success "System updated."
+}
+
+install_dependencies() {
+    info "Installing dependencies..."
+    apt install -y git docker-compose > /dev/null 2>&1
+    success "Dependencies installed."
+}
+
+setup_browser() {
+    info "Pulliung the git repository..."
+    cd ${default_path} && git clone https://github.com/searxng/searxng-docker.git > /dev/null 2>&1
+
+    info "Setting up default server ip..."
+    cd ${default_path}/searxng-docker
+    sed -i "s|^# SEARXNG_HOSTNAME=.*|SEARXNG_HOSTNAME=${IP}|" .env
+    sed -i "s/127.0.0.1:8080/0.0.0.0:8181/" docker-compose.yaml
+    sudo chmod a+rwx searxng
+    echo -e "\n[botdetection.ip_lists]\nblock_ip = []\npass_ip = []" >> searxng/limiter.toml
+
+    # Reset settings.yml file:
+    rm searxng/settings.yml
+    # Remove the cap_drop line from docker-compose.yaml
+    awk '
+/^\s*searxng:$/ { in_searxng=1 }
+/^\s*[a-zA-Z0-9_-]+:$/ && $1 != "searxng:" { in_searxng=0 }
+/^\s+cap_drop:/ && in_searxng { skip=1; next }
+/^\s+- ALL/ && skip { next }
+/^\s+[^-]/ { skip=0 }
+{ print }
+' docker-compose.yaml > tmp.yaml && mv tmp.yaml docker-compose.yaml
+
+
+    # Generate a new settings.yml file
+    info "Generating new settings.yml file..."
+    docker-compose up -d ; sleep 10 ; docker-compose down
+
+    # Uncomment the cap_drop line in docker-compose.yaml
+    awk '
+/^\s*searxng:$/ { in_searxng=1; indent=match($0, /[^ ]/) }
+/^\s*[a-zA-Z0-9_-]+:$/ && $1 != "searxng:" { in_searxng=0 }
+/^\s+cap_drop:/ && in_searxng { has_capdrop=1 }
+/^\s+volumes:/ && in_searxng {
+    print
+    if (!has_capdrop) {
+        space = substr($0, 1, indent + 2)
+        print space "cap_drop:"
+        print space "  - ALL"
+    }
+    next
+}
+{ print }
+' docker-compose.yaml > tmp.yaml && mv tmp.yaml docker-compose.yaml
+
+    # Generate a secret key
+    info "Generating secret key..."
+    sed -i "s|ultrasecretkey|$(openssl rand -hex 32)|g" searxng/settings.yml
+
+    # Set the default port for caddy to 8080
+    sed -i 's/port: 8888/port: 8080/' searxng/settings.yml
+
+    # Bind the address
+    # sed -i 's/bind_address: "0.0.0.0"/bind_address: "127.0.0.1"/' searxng/settings.yml
+}
+
+start_tor() {
+    info "Starting Tor..."
+    systemctl stop tor
+    # Check if tor is installed
+    if ! command -v tor &> /dev/null; then
+        warning "Tor is not installed. Installing Tor..."
+        apt install -y tor
+        info "Tor installed."
+    fi
+
+    #  Changing defult tor interface
+    sed -i "/^#SocksPort/ s/^#SocksPort.*/SocksPort 0.0.0.0:9050/" /etc/tor/torrc
+
+    # Check if the tor service is running
+    if systemctl is-active --quiet tor; then
+        info "Tor service is running."
+    else
+        info "Starting Tor service..."
+        systemctl start tor
+        info "Tor service started."
+    fi
+    # Check if the tor service is enabled
+    if systemctl is-enabled --quiet tor; then
+        info "Tor service is enabled."
+    else
+        info "Enabling Tor service..."
+        systemctl enable tor
+        info "Tor service enabled."
+    fi
+
+    # Ensure tor network is reachable
+    if curl --socks5-hostname "${IP}:9050" -s https://check.torproject.org/ | grep -q "Congratulations. This browser is configured to use Tor."; then
+        success "Tor network is reachable."
+    else
+        error "Tor network is not reachable. Please check your Tor configuration."
+        exit 1
+    fi
+
+    # Modify proxy in settings.yml
+    sed -i "/^outgoing:/,/^$/c\
+outgoing:\n  request_timeout: 10.0\n  max_request_timeout: 30.0\n  proxies:\n    all://:\n      - socks5h://${IP}:9050\n  using_tor_proxy: true" searxng/settings.yml
+}
+
+
+add_browser(){
+    info "Amhia will be added to searxng..."
+    # Add amhia to searxng
+    sed -i "/^#amahi:/,/^$/c\
+amahi:\n  name: amahi\n  url: https://amahi.org/\n  search_url: https://www.amahi.org/search?q={}\n  search_url_post: false\n  search_url_get: true\n  search_url_get_param: q\n  search_url_get_param_value: {}\n  search_url_post_param: q\n  search_url_post_param_value: {}\n  search_url_post_headers:\n    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3" searxng/settings.yml
+
+    
+}
+
+reset_to_default(){
+    info "Resetting searxng to default settings..."
+    # Stop containers and remove the searxng-docker directory
+    {
+        cd ${default_path}searxng-docker > /dev/null 2>&1 && docker-compose down > /dev/null 2>&1
+        cd ${default_path} && rm -rf searxng-docker > /dev/null 2>&1
+        success "SearXNG reset to default settings."
+    } || {
+        info "No searxng-docker directory found. Skipping reset."
+    }
+}
+
+if [[ $# -eq 0 ]]; then
+    help_menu
+    exit 1
+fi
+
+
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)
+            help_menu
+            exit 0
+            ;;
+        --install|-i)
+            check_root
+            reset_to_default
+            update_system
+            install_dependencies
+            setup_browser
+            start_tor
+            docker-compose up -d
+            info "SearXNG setup complete."
+            info "You can access SearXNG at http://$IP:8181"
+            shift
+            ;;
+        --update|-up)
+            check_root
+            update_system
+            install_dependencies
+            docker-compose down
+            docker-compose pull
+            docker-compose up -d
+            info "SearXNG updated."
+            shift
+            ;;
+        --uninstall|-un)
+            check_root
+            docker-compose down
+            rm -rf ./searxng
+            info "SearXNG uninstalled."
+            shift
+            ;;
+        --tor|-t)
+            check_root
+            start_tor
+            shift
+            ;;
+        --browser|-b)
+            check_root
+            setup_browser
+            shift
+            ;;
+        --help|-h)
+            help_menu
+            exit 0
+            ;;
+        *)
+            echo "Invalid option: $1"
+            help_menu
+            exit 1
+            ;;
+    esac
+done
