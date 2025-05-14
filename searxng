@@ -114,7 +114,7 @@ setup_browser() {
     info "Setting up default server ip..."
     cd ${default_path}/searxng-docker
     sed -i "s|^# SEARXNG_HOSTNAME=.*|SEARXNG_HOSTNAME=${IP}|" .env
-    sed -i "s/127.0.0.1:8080/0.0.0.0:8181/" docker-compose.yaml
+    sed -i "s/127.0.0.1:8080/0.0.0.0:8080/" docker-compose.yaml
     sudo chmod a+rwx searxng
     echo -e "\n[botdetection.ip_lists]\nblock_ip = []\npass_ip = []" >> searxng/limiter.toml
 
@@ -157,11 +157,32 @@ setup_browser() {
     sed -i "s|ultrasecretkey|$(openssl rand -hex 32)|g" searxng/settings.yml
 
     # Set the default port for caddy to 8080
-    sed -i 's/port: 8888/port: 8080/' searxng/settings.yml
+    sed -i 's/port: 8888/port: 80/' searxng/settings.yml
 
     # Bind the address
-    # sed -i 's/bind_address: "0.0.0.0"/bind_address: "127.0.0.1"/' searxng/settings.yml
+    sed -i 's/bind_address: "127.0.0.1"/bind_address: "0.0.0.0"/' searxng/settings.yml
 }
+
+setup_domain_name() {
+    info "Setting up domain name..."
+    # Check if the domain name is set
+    if [ -z "$domain_name" ]; then
+        read -p "Enter your domain name: " domain_name
+    fi
+
+    cd ${default_path}searxng-docker > /dev/null 2>&1 && docker-compose down > /dev/null 2>&1
+
+    # Set the domain name in the settings.yml file
+    sed -i "s|^# SEARXNG_HOSTNAME=.*|SEARXNG_HOSTNAME=${domain_name}|" .env
+    sed -i "s|^SEARXNG_HOSTNAME=.*|SEARXNG_HOSTNAME=${domain_name}|" .env
+
+    cd ${default_path}searxng-docker > /dev/null 2>&1 && docker-compose up -d > /dev/null 2>&1
+
+    success "Domain name set to ${domain_name}."
+
+
+}
+
 
 start_tor() {
     info "Starting Tor..."
@@ -194,7 +215,7 @@ start_tor() {
     fi
 
     # Ensure tor network is reachable
-    if curl --socks5-hostname "${IP}:9050" -s https://check.torproject.org/ | grep -q "Congratulations. This browser is configured to use Tor."; then
+    if curl --socks5-hostname "${IP}:9050" -s https://check.torproject.org/ | grep -q "This browser is configured to use Tor."; then
         success "Tor network is reachable."
     else
         error "Tor network is not reachable. Please check your Tor configuration."
@@ -253,6 +274,11 @@ while [[ $# -gt 0 ]]; do
             info "You can access SearXNG at http://$IP:8181"
             shift
             ;;
+        --domain|-d)
+            check_root
+            setup_domain_name
+            shift
+            ;;
         --update|-up)
             check_root
             update_system
@@ -265,8 +291,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --uninstall|-un)
             check_root
-            docker-compose down
-            rm -rf ./searxng
+            reset_to_default
             info "SearXNG uninstalled."
             shift
             ;;
@@ -277,7 +302,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --browser|-b)
             check_root
-            setup_browser
+            setup_domain_name
             shift
             ;;
         --help|-h)
