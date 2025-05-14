@@ -47,7 +47,7 @@ $$\   $$ |$$   ____|$$  __$$ |$$ |      $$  $$<  $$ |\$$$ |$$ |  $$ |
 EOF
 
 help_menu(){
-        echo -e "\n${CYAN}SearXNG Installer Script Help${NC}"
+    echo -e "\n${CYAN}SearXNG Installer Script Help${NC}"
     echo
     echo -e "${BLUE}Description:${NC}"
     echo "  This script installs and configures SearXNG, a privacy-respecting metasearch engine,"
@@ -59,15 +59,22 @@ help_menu(){
     echo
     echo -e "${BLUE}Options:${NC}"
     echo "  -h, --help          Show this help menu and exit."
-    echo "  --reset             Reset the existing SearXNG setup (if any)."
-    echo "  --no-tor            Skip configuring Tor support."
-    echo "  --add-browser       Add custom search engine integration (e.g., Amhia)."
+    echo "  --install, -i      Install SearXNG with full setup."
+    echo "  --domain, -d       Set up domain name for SearXNG."
+    echo "  --update, -up      Update SearXNG to the latest version."
+    echo "  --uninstall, -un   Uninstall SearXNG and remove configuration."
+    echo "  --tor, -t          Start and configure Tor service."
+    echo "  --browser, -b      Add custom browser integration."
+    echo "  --reset            Reset SearXNG to default settings."
     echo
     echo -e "${BLUE}Examples:${NC}"
-    echo "  sudo ./$(basename "$0")               # Install SearXNG with full setup"
-    echo "  sudo ./$(basename "$0") --reset       # Reset SearXNG to default state"
-    echo "  sudo ./$(basename "$0") --no-tor      # Install without configuring Tor"
-    echo "  sudo ./$(basename "$0") --add-browser # Install and add Amhia engine"
+    echo "  sudo ./$(basename "$0") -h                   # Show help menu"
+    echo "  sudo ./$(basename "$0") --install            # Install SearXNG with full setup"
+    echo "  sudo ./$(basename "$0") --domain            # Set up domain name"
+    echo "  sudo ./$(basename "$0") --update            # Update SearXNG"
+    echo "  sudo ./$(basename "$0") --uninstall         # Uninstall SearXNG"
+    echo "  sudo ./$(basename "$0") --tor               # Configure Tor service"
+    echo "  sudo ./$(basename "$0") --browser          # Add browser integration"
     echo
     echo -e "${BLUE}Default Configuration:${NC}"
     echo "  - Installation Path : ${default_path}searxng-docker"
@@ -279,7 +286,7 @@ while [[ $# -gt 0 ]]; do
             setup_domain_name
             shift
             ;;
-        --update|-up)
+        --update|-u)
             check_root
             update_system
             install_dependencies
@@ -289,7 +296,7 @@ while [[ $# -gt 0 ]]; do
             info "SearXNG updated."
             shift
             ;;
-        --uninstall|-un)
+        --reset|-r)
             check_root
             reset_to_default
             info "SearXNG uninstalled."
@@ -304,10 +311,6 @@ while [[ $# -gt 0 ]]; do
             check_root
             setup_domain_name
             shift
-            ;;
-        --help|-h)
-            help_menu
-            exit 0
             ;;
         *)
             echo "Invalid option: $1"
